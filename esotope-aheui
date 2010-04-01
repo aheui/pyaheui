@@ -1,24 +1,26 @@
 #!/usr/bin/env python
-"""\
-Aheui Interpreter in Python, revision 5a
-Copyright (c) 2005, Kang Seonghoon (Tokigun).
-
-This library is free software; you can redistribute it and/or
-modify it under the terms of the GNU Lesser General Public
-License as published by the Free Software Foundation; either
-version 2.1 of the License, or (at your option) any later version.
-
-This library is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-Lesser General Public License for more details.
-
-You should have received a copy of the GNU Lesser General Public
-License along with this library; if not, write to the Free Software
-Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-
-$Id: aheui.py,v 1.3 2005/07/28 11:00:31 tokigun Exp $
-"""
+#
+# Esotope Aheui Interpreter, revision 6
+# Copyright (c) 2005, 2010, Kang Seonghoon.
+# 
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+# 
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import sys
 
@@ -49,7 +51,7 @@ class AheuiPort(AheuiStack):
     def pop(self):
         return None
 
-class AheuiIO:
+class AheuiIO(object):
     def __init__(self, encoding='utf-8'):
         self.encoding = encoding
 
@@ -57,16 +59,15 @@ class AheuiIO:
         buf = ''
         while 1:
             char = sys.stdin.read(1)
-            if char == '': return -1
+            if char == '':
+                return -1
             buf += char
             try:
                 return ord(buf.decode(self.encoding))
-            except UnicodeError:
-                try:
-                    reason = sys.exc_info()[1].reason
-                    if not ('end of data' in reason or 'incomplete' in reason):
-                        return None
-                except: pass
+            except UnicodeError, e:
+                # if we may clear out this error by reading more buffer, ignore for now
+                if not ('end of data' in e.reason or 'incomplete' in e.reason):
+                    return None
 
     def getunichar(self):
         char = self.getunicode()
@@ -81,11 +82,15 @@ class AheuiIO:
         char = self.getunicode()
         if char is None:
             return 0xfffd
+        elif char == 13:
+            return 10
         else:
-            return char == 13 and 10 or char
+            return char
 
     def getint(self):
-        str = u' '; char = u'0'; sign = 1
+        str = u' '
+        char = u'0'
+        sign = 1
         while str and not str.isdigit():
             if str == u'-':
                 sign = -sign
@@ -101,10 +106,12 @@ class AheuiIO:
         sys.stdout.write(unicode(value).encode(self.encoding))
 
     def putchar(self, value):
-        try: sys.stdout.write(unichr(value).encode(self.encoding))
-        except: sys.stdout.write('[U+%04X]' % value)
+        try:
+            sys.stdout.write(unichr(value).encode(self.encoding))
+        except:
+            sys.stdout.write('[U+%04X]' % value)
 
-class AheuiCode:
+class AheuiCode(object):
     def __init__(self, code):
         if not isinstance(code, unicode):
             code = str(code).encode('utf-8')
@@ -115,13 +122,16 @@ class AheuiCode:
             if len(line) > self.sizex:
                 self.sizex = len(line)
             self.sizey += 1
-            self.space.append([self.split(char) for char in line])
-        if self.sizex == 0: self.sizex = 1
-        if self.sizey == 0: self.sizey = 1
+            self.space.append(map(self.split, line))
+        if self.sizex == 0:
+            self.sizex = 1
+        if self.sizey == 0:
+            self.sizey = 1
 
     def __getitem__(self, index):
+        x, y = index
         try:
-            return self.space[index[1]][index[0]]
+            return self.space[y][x]
         except IndexError:
             return ()
 
@@ -136,9 +146,9 @@ class AheuiCode:
 
 ################################################################################
 
-class AheuiInterpreter:
-    nrequired = [0, 0, 2, 2, 2, 2, 1, 0, 1, 0, 1, 0, 2, 0, 1, 0, 2, 2, 0]
-    finalvalue = [0, 2, 4, 4, 2, 5, 5, 3, 5, 7, 9, 9, 7, 9, 9,
+class AheuiInterpreter(object):
+    MINSTACKSIZE = [0, 0, 2, 2, 2, 2, 1, 0, 1, 0, 1, 0, 2, 0, 1, 0, 2, 2, 0]
+    FINALVALUE = [0, 2, 4, 4, 2, 5, 5, 3, 5, 7, 9, 9, 7, 9, 9,
                   8, 4, 4, 6, 2, 4, 1, 3, 4, 3, 4, 4, 3]
 
     def __init__(self, code, io=None):
@@ -147,9 +157,10 @@ class AheuiInterpreter:
         self.ready = False
 
     def init(self):
-        self.x = 0; self.y = 0
-        self.dx = 1; self.dy = 0
-        self.stack = 0
+        self.x = 0
+        self.y = 0
+        self.dx = 1
+        self.dy = 0
         self.ready = True
         self.finished = False
         
@@ -161,30 +172,36 @@ class AheuiInterpreter:
                 self.stacks.append(AheuiPort())
             else:
                 self.stacks.append(AheuiStack())
-        self.current = self.stacks[self.stack]
+        self.current = self.stacks[0]
 
     def get_delta(self, code, dx, dy):
-        if code == 0: dx, dy = 1, 0
-        elif code == 2: dx, dy = 2, 0
-        elif code == 4: dx, dy = -1, 0
-        elif code == 6: dx, dy = -2, 0
-        elif code == 8: dx, dy = 0, -1
-        elif code == 12: dx, dy = 0, -2
-        elif code == 13: dx, dy = 0, 1
-        elif code == 17: dx, dy = 0, 2
-        elif code == 18: dy = -dy
-        elif code == 19: dx, dy = -dx, -dy
-        elif code == 20: dx = -dx
-        return (dx, dy)
+        if code == 0: return (1, 0)
+        elif code == 2: return (2, 0)
+        elif code == 4: return (-1, 0)
+        elif code == 6: return (-2, 0)
+        elif code == 8: return (0, -1)
+        elif code == 12: return (0, -2)
+        elif code == 13: return (0, 1)
+        elif code == 17: return (0, 2)
+        elif code == 18: return (dx, -dy)
+        elif code == 19: return (-dx, -dy)
+        elif code == 20: return (-dx, dy)
+        else: return (dx, dy)
 
     def next_cell(self, x, y, dx, dy, sizex, sizey):
-        x += dx; y += dy
-        if x >= sizex: x = x % dx
-        elif x < 0: x = sizex - (sizex - x) % dx
-        if y >= sizey: y = y % dy
-        elif y < 0: y = sizey - (sizey - y) % dy
+        x += dx
+        if x >= sizex:
+            x = x % dx
+        elif x < 0:
+            x = sizex - (sizex - x) % dx
 
-        return (x, y)
+        y += dy
+        if y >= sizey:
+            y = y % dy
+        elif y < 0:
+            y = sizey - (sizey - y) % dy
+
+        return x, y
 
     def step(self):
         char = self.code[self.x, self.y]
@@ -193,102 +210,114 @@ class AheuiInterpreter:
             a, b, c = char
             self.dx, self.dy = self.get_delta(b, self.dx, self.dy)
 
-            if len(self.current) < self.nrequired[a]:
-                self.dx = -self.dx; self.dy = -self.dy
-            elif a == 2:
+            if len(self.current) < self.MINSTACKSIZE[a]:
+                self.dx = -self.dx
+                self.dy = -self.dy
+            elif a == 2: # div
                 x = self.current.pop()
                 y = self.current.pop()
-                self.current.push(x != 0 and y / x or 0)
-            elif a == 3:
+                if x != 0:
+                    self.current.push(y // x)
+                else:
+                    self.current.push(0)
+            elif a == 3: # add
                 x = self.current.pop()
                 y = self.current.pop()
                 self.current.push(y + x)
-            elif a == 4:
+            elif a == 4: # mul
                 x = self.current.pop()
                 y = self.current.pop()
                 self.current.push(y * x)
-            elif a == 5:
+            elif a == 5: # mod
                 x = self.current.pop()
                 y = self.current.pop()
-                self.current.push(x != 0 and y % x or 0)
-            elif a == 6:
+                if x != 0:
+                    self.current.push(y % x)
+                else:
+                    self.current.push(0)
+            elif a == 6: # pop
                 x = self.current.pop()
                 if c == 21:
                     self.io.putint(x)
                 elif c == 27:
                     self.io.putchar(x)
-            elif a == 7:
+            elif a == 7: # push
                 if c == 21:
                     x = self.io.getint()
                 elif c == 27:
                     x = self.io.getchar()
                 else:
-                    x = self.finalvalue[c]
+                    x = self.FINALVALUE[c]
                 self.current.push(x)
-            elif a == 8:
+            elif a == 8: # dup
                 self.current.dup()
-            elif a == 9:
-                self.stack = c
+            elif a == 9: # sel
                 self.current = self.stacks[c]
-            elif a == 10:
+            elif a == 10: # mov
                 x = self.current.pop()
                 self.stacks[c].push(x)
-            elif a == 12:
+            elif a == 12: # ge
                 x = self.current.pop()
                 y = self.current.pop()
-                self.current.push(y>=x and 1 or 0)
-            elif a == 14:
+                if y >= x:
+                    self.current.push(1)
+                else:
+                    self.current.push(0)
+            elif a == 14: # if
                 if self.current.pop() == 0:
-                    self.dx = -self.dx; self.dy = -self.dy
-            elif a == 16:
+                    self.dx = -self.dx
+                    self.dy = -self.dy
+            elif a == 16: # sub
                 x = self.current.pop()
                 y = self.current.pop()
                 self.current.push(y - x)
-            elif a == 17:
+            elif a == 17: # swap
                 self.current.swap()
-            elif a == 18:
+            elif a == 18: # halt
                 self.finished = True
         
-        self.x, self.y = self.next_cell(self.x, self.y, self.dx, self.dy, self.code.sizex, self.code.sizey)
+        self.x, self.y = self.next_cell(self.x, self.y, self.dx, self.dy,
+                                        self.code.sizex, self.code.sizey)
 
     def execute(self):
         self.init()
         while not self.finished:
             self.step()
 
+        exitcode = self.current.pop()
+        if exitcode is None: exitcode = 0
+        return exitcode
+
     get_delta = classmethod(get_delta)
     next_cell = classmethod(next_cell)
 
 ################################################################################
 
-OPT_SKIP_BLANKLINE = 1
-
 def version(apppath):
-    print __doc__
+    print >>sys.stderr, 'Esotope Aheui Interpreter revision 6'
+    print >>sys.stderr, 'Copyright (c) 2005, 2010, Kang Seonghoon.'
     return 0
 
 def help(apppath):
-    print __doc__[:__doc__.find('\n\n')]
-    print
-    print "Usage: %s [options] <filename> [<param>]" % apppath
-    print
-    print "--help, -h"
-    print "    prints help message."
-    print "--version, -V"
-    print "    prints version information."
-    print "--skip-blankline, -x"
-    print "    skips leading blank lines."
-    print "--fileencoding, -e"
-    print "    set encoding of source code. (default 'utf-8')"
-    print "--ioencoding"
-    print "    set encoding for input/output."
+    version(apppath)
+    print >>sys.stderr
+    print >>sys.stderr, 'Usage: %s [options] <filename> [<param>]' % apppath
+    print >>sys.stderr
+    print >>sys.stderr, '--help, -h              Prints help message.'
+    print >>sys.stderr, '--version, -V           Prints version information.'
+    print >>sys.stderr, '--skip-blankline, -x    Skips leading blank lines.'
+    print >>sys.stderr, '--fileencoding, -e      Set the encoding of source code. (default "utf-8")'
+    print >>sys.stderr, '--ioencoding, -E        Set the encoding for input/output.'
+    print >>sys.stderr
+    print >>sys.stderr, 'See more information about esotope at:'
+    print >>sys.stderr, '    http://mearie.org/projects/esotope/aheui'
     return 0
 
 def main(argv):
     import getopt, locale
 
     try:
-        opts, args = getopt.getopt(argv[1:], "hVe:x",
+        opts, args = getopt.getopt(argv[1:], 'hVe:E:x',
                 ['help', 'version', 'fileencoding=', 'ioencoding=', 'charset=',
                  'skip-blankline'])
     except getopt.GetoptError:
@@ -296,22 +325,24 @@ def main(argv):
 
     fencoding = 'utf-8'
     ioencoding = locale.getdefaultlocale()[1]
-    mode = 0
+    skipblanklines = False
     for opt, arg in opts:
         if opt in ('-h', '--help'):
             return help(argv[0])
-        if opt in ('-V', '--version'):
+        elif opt in ('-V', '--version'):
             return version(argv[0])
-        if opt in ('-e', '--fileencoding', '--charset'):
+        elif opt in ('-e', '--fileencoding', '--charset'):
             if opt == '--charset':
                 print 'Warning: --charset option is deprecated. use --fileencoding.'
             fencoding = arg
-        if opt in ('-x', '--skip-blankline'):
-            mode |= OPT_SKIP_BLANKLINE
-        if opt == '--ioencoding':
+        elif opt in ('-x', '--skip-blankline'):
+            skipblanklines = True
+        elif opt in ('-E', '--ioencoding'):
             ioencoding = arg
     if len(args) == 0:
-        print __doc__[:__doc__.find('\n\n')]
+        version(argv[0])
+        print >>sys.stderr
+        print >>sys.stderr, 'Type "%s --help" for help.' % argv[0]
         return 1
 
     # encoding fix
@@ -326,24 +357,23 @@ def main(argv):
         else:
             data = file(filename).read()
     except IOError:
-        print "Cannot read file: %s" % filename
+        print 'Cannot read file: %s' % filename
         return 1
     try:
         data = data.decode(fencoding)
     except LookupError:
-        print "There is no encoding named '%s'." % fencoding
+        print 'There is no encoding named "%s".' % fencoding
         return 1
     except UnicodeDecodeError:
-        print "Unicode decode error!"
+        print 'Unicode decode error!'
         return 1
 
-    if mode & OPT_SKIP_BLANKLINE:
+    if skipblanklines:
         data = data.lstrip('\r\n')
     code = AheuiCode(data)
     io = AheuiIO(ioencoding)
     interpreter = AheuiInterpreter(code, io)
-    interpreter.execute()
-    return interpreter.current.pop() or 0
+    return interpreter.execute()
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
