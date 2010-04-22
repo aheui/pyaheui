@@ -159,8 +159,13 @@ class AheuiInterpreter(object):
     def init(self):
         self.x = 0
         self.y = 0
-        self.dx = 1
-        self.dy = 0
+        if self.code[self.x, self.y] == ():
+            # move down if the first character is not a hangeul at all
+            self.dx = 0
+            self.dy = 1
+        else:
+            self.dx = 1
+            self.dy = 0
         self.ready = True
         self.finished = False
         
